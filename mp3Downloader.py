@@ -15,6 +15,9 @@ cancel_event = threading.Event()
 
 def progress_hook(d, index, total_videos):
     """Función de hook para obtener el progreso de la descarga."""
+    if cancel_event.is_set():
+        raise Exception("Descarga cancelada")  # Lanzar una excepción para detener la descarga
+
     if d['status'] == 'finished':
         output_text.insert(tk.END, f"Descarga completada: {d['filename']}\n")
         output_text.see(tk.END)  # Desplaza el texto hacia el final
@@ -28,11 +31,6 @@ def progress_hook(d, index, total_videos):
 
 def descargar_video(url, output_path, index, total_videos):
     """Descarga un video de YouTube en formato MP3."""
-    if cancel_event.is_set():
-        output_text.insert(tk.END, "Descarga cancelada por el usuario.\n")
-        output_text.see(tk.END)
-        return  # Salir si se solicita cancelación
-
     ydl_opts = {
         'format': 'bestaudio/best',
         'extractaudio': True,
@@ -50,7 +48,10 @@ def descargar_video(url, output_path, index, total_videos):
         try:
             ydl.download([url])
         except Exception as e:
-            output_text.insert(tk.END, f"Error al descargar {url}: {e}\n")
+            if str(e) == "Descarga cancelada":
+                output_text.insert(tk.END, "Descarga cancelada por el usuario.\n")
+            else:
+                output_text.insert(tk.END, f"Error al descargar {url}: {e}\n")
             output_text.see(tk.END)  # Desplaza el texto hacia el final
 
 def descargar_playlist(url, output_path):
@@ -77,7 +78,7 @@ def iniciar_descarga():
     output_text.delete(1.0, tk.END)  # Limpiar la salida de texto
 
     # Iniciar la descarga en un hilo separado
-    if "playlist" in url:
+    if "playlist" or "list" in url:
         download_thread = threading.Thread(target=descargar_playlist, args=(url, output_path))
     else:
         download_thread = threading.Thread(target=descargar_video, args=(url, output_path, 0, 1))
@@ -89,6 +90,11 @@ def cancelar_descarga():
     cancel_event.set()  # Activar el evento de cancelación
     output_text.insert(tk.END, "Descarga cancelada por el usuario.\n")
     output_text.see(tk.END)  # Desplaza el texto hacia el final
+
+# Función para cerrar la ventana y detener hilos
+def on_closing():
+    cancel_event.set()  # Activa el evento de cancelación para todos los hilos
+    root.destroy()  # Cierra la ventana
 
 # Crear la ventana principal
 root = tk.Tk()
@@ -127,6 +133,9 @@ button_cancel.pack(pady=10)
 # Recuadro de texto para mostrar la salida de la consola
 output_text = scrolledtext.ScrolledText(root, width=70, height=10)
 output_text.pack(pady=10)
+
+# Configurar el cierre de la ventana para cancelar la descarga
+root.protocol("WM_DELETE_WINDOW", on_closing)
 
 # Iniciar el bucle principal de la interfaz
 root.mainloop()
