@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog
-from tkinter import ttk
+from tkinter import scrolledtext
 import yt_dlp
 from pytube import Playlist
 import os
@@ -16,18 +16,22 @@ cancel_event = threading.Event()
 def progress_hook(d, index, total_videos):
     """Función de hook para obtener el progreso de la descarga."""
     if d['status'] == 'finished':
-        print(f"Descarga completada: {d['filename']}")
+        output_text.insert(tk.END, f"Descarga completada: {d['filename']}\n")
+        output_text.see(tk.END)  # Desplaza el texto hacia el final
         progress_queue.put((index + 1, total_videos))  # Indicar que se ha completado la descarga
     elif d['status'] == 'downloading':
         if 'downloaded_bytes' in d and 'total_bytes' in d:
             downloaded = d['downloaded_bytes']
             total = d['total_bytes']
-            print(f"Descargando: {downloaded}/{total} bytes")
+            output_text.insert(tk.END, f"Descargando: {downloaded}/{total} bytes\n")
+            output_text.see(tk.END)  # Desplaza el texto hacia el final
 
 def descargar_video(url, output_path, index, total_videos):
     """Descarga un video de YouTube en formato MP3."""
     if cancel_event.is_set():
-        return  # Exit if cancellation is requested
+        output_text.insert(tk.END, "Descarga cancelada por el usuario.\n")
+        output_text.see(tk.END)
+        return  # Salir si se solicita cancelación
 
     ydl_opts = {
         'format': 'bestaudio/best',
@@ -46,7 +50,8 @@ def descargar_video(url, output_path, index, total_videos):
         try:
             ydl.download([url])
         except Exception as e:
-            print(f"Error al descargar {url}: {e}")
+            output_text.insert(tk.END, f"Error al descargar {url}: {e}\n")
+            output_text.see(tk.END)  # Desplaza el texto hacia el final
 
 def descargar_playlist(url, output_path):
     """Descarga todos los videos de una playlist de YouTube en formato MP3."""
@@ -55,24 +60,13 @@ def descargar_playlist(url, output_path):
         total_videos = len(playlist.video_urls)
         for index, video_url in enumerate(playlist.video_urls):
             if cancel_event.is_set():
-                print("Descarga cancelada")
+                output_text.insert(tk.END, "Descarga cancelada\n")
+                output_text.see(tk.END)  # Desplaza el texto hacia el final
                 break  # Exit loop if cancellation is requested
             descargar_video(video_url, output_path, index, total_videos)
     except Exception as e:
-        print(f"Error al descargar la playlist {url}: {e}")
-
-def update_progress():
-    """Actualiza la barra de progreso."""
-    while not cancel_event.is_set():
-        try:
-            index, total = progress_queue.get(timeout=1)  # Esperar actualizaciones de progreso
-            if total > 0:
-                progress = (index / total) * 100
-                progress_bar['value'] = progress
-                label_progress.config(text=f"{index} de {total}")
-
-        except queue.Empty:
-            continue  # No hay actualizaciones, continuar
+        output_text.insert(tk.END, f"Error al descargar la playlist {url}: {e}\n")
+        output_text.see(tk.END)  # Desplaza el texto hacia el final
 
 def iniciar_descarga():
     url = entry_url.get()
@@ -80,6 +74,7 @@ def iniciar_descarga():
 
     # Resetear el evento de cancelación
     cancel_event.clear()
+    output_text.delete(1.0, tk.END)  # Limpiar la salida de texto
 
     # Iniciar la descarga en un hilo separado
     if "playlist" in url:
@@ -89,16 +84,11 @@ def iniciar_descarga():
 
     download_thread.start()
 
-    # Iniciar el hilo para actualizar el progreso
-    progress_thread = threading.Thread(target=update_progress, daemon=True)
-    progress_thread.start()
-
 def cancelar_descarga():
     """Cancela todas las descargas en curso."""
     cancel_event.set()  # Activar el evento de cancelación
-    progress_queue.queue.clear()  # Limpiar la cola de progreso
-    progress_bar['value'] = 0  # Resetear barra de progreso
-    label_progress.config(text="Descarga cancelada")  # Actualizar el texto de estado
+    output_text.insert(tk.END, "Descarga cancelada por el usuario.\n")
+    output_text.see(tk.END)  # Desplaza el texto hacia el final
 
 # Crear la ventana principal
 root = tk.Tk()
@@ -134,13 +124,9 @@ button_download.pack(pady=10)
 button_cancel = tk.Button(root, text="Cancelar descarga", command=cancelar_descarga)
 button_cancel.pack(pady=10)
 
-# Barra de progreso
-progress_bar = ttk.Progressbar(root, orient="horizontal", length=400, mode="determinate")
-progress_bar.pack(pady=20)
-
-# Etiqueta para mostrar el progreso
-label_progress = tk.Label(root, text="Progreso: 0 de 0")
-label_progress.pack(pady=10)
+# Recuadro de texto para mostrar la salida de la consola
+output_text = scrolledtext.ScrolledText(root, width=70, height=10)
+output_text.pack(pady=10)
 
 # Iniciar el bucle principal de la interfaz
 root.mainloop()
